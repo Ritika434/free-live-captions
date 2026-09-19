@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Free Live Captions</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="header">
+        <h1>Free Live Captions</h1>
+        <p class="tagline">On-device. Private. Free forever.</p>
+      </header>
+
+      <section class="section" aria-labelledby="toggle-heading">
+        <h2 id="toggle-heading" class="visually-hidden">Captions</h2>
+        <button id="toggle-btn" type="button" class="toggle-btn" aria-pressed="false">
+          Turn captions on
+        </button>
+        <p id="status" class="status" role="status" aria-live="polite">Captions are off for this tab.</p>
+      </section>
+
+      <section id="file-access-warning" class="section warning" hidden>
+        <p>
+          To caption local video files, enable
+          <strong>"Allow access to file URLs"</strong> for this extension.
+        </p>
+        <button id="open-extensions-btn" type="button" class="link-btn">Open extension settings</button>
+      </section>
+
+      <section class="section">
+        <fieldset>
+          <legend>Model quality</legend>
+          <label class="radio-row">
+            <input type="radio" name="model-tier" value="tiny" />
+            <span><strong>Tiny</strong> — fastest, works on any laptop, basic accuracy</span>
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="model-tier" value="base" checked />
+            <span><strong>Base</strong> — recommended default, good accuracy on most speech</span>
+          </label>
+          <label class="radio-row">
+            <input type="radio" name="model-tier" value="small" />
+            <span><strong>Small</strong> — best accuracy, needs a stronger GPU (large download)</span>
+          </label>
+        </fieldset>
+      </section>
+
+      <section class="section">
+        <fieldset>
+          <legend>Caption appearance</legend>
+          <label class="control-row" for="font-size">
+            Text size
+            <input id="font-size" type="range" min="16" max="48" step="2" value="28" />
+          </label>
+          <label class="control-row" for="text-color">
+            Text color
+            <input id="text-color" type="color" value="#ffffff" />
+          </label>
+          <label class="control-row" for="bg-opacity">
+            Background opacity
+            <input id="bg-opacity" type="range" min="0" max="1" step="0.05" value="0.85" />
+          </label>
+          <button id="reset-position-btn" type="button" class="link-btn">Reset caption position</button>
+        </fieldset>
+      </section>
+
+      <section class="section">
+        <h2 class="visually-hidden">Transcript</h2>
+        <div class="button-row">
+          <button id="export-txt-btn" type="button">Download .txt</button>
+          <button id="export-srt-btn" type="button">Download .srt</button>
+          <button id="clear-btn" type="button" class="danger">Clear transcript</button>
+        </div>
+      </section>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

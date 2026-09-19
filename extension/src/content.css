@@ -1,0 +1,9 @@
+/* Defense-in-depth reset for the overlay host element, applied from the host
+   page's stylesheet context. The overlay's real styling lives inside its
+   closed Shadow DOM (see content.js) — this just stops aggressive page CSS
+   (e.g. "* { all: unset }" resets) from hiding or displacing the host node. */
+free-live-captions-host {
+  all: initial !important;
+  position: fixed !important;
+  z-index: 2147483647 !important;
+}

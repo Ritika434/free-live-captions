@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "Free Live Captions",
+  "short_name": "Live Captions",
+  "version": "0.1.0",
+  "description": "Free, private, on-device live captions for any browser tab. No account, no cloud, no cost.",
+  "permissions": ["tabCapture", "offscreen", "activeTab", "storage", "downloads"],
+  "host_permissions": ["http://*/*", "https://*/*", "file://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Free Live Captions",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["ort/*"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}
