@@ -53,6 +53,17 @@ const MIN_INFER_SAMPLES = SAMPLE_RATE * 0.5; // finalize threshold — keep low 
 // before showing the *first* guess doesn't fix raw model accuracy, but it
 // does stop the worst, most-guaranteed-wrong guesses from ever being shown.
 const MIN_INFER_SAMPLES_INTERIM = SAMPLE_RATE * 1.5;
+// Interim passes re-transcribe the whole growing segment from scratch every
+// ~1s. Raising MAX_SEGMENT_MS to 15s (for accuracy — see above) means that
+// buffer can now grow quite long before finalizing, so *later* interim passes
+// in a long segment take proportionally longer to compute than early ones —
+// showing up as increasing lag the longer someone talks without pausing
+// (found via real-world testing, 2026-09-20). Bounding interim passes to only
+// the most recent ~8s keeps their compute cost — and so their latency — flat
+// regardless of segment length. The *final* pass still sees the full segment
+// (up to 15s) for maximum context/accuracy; only the interim/live view trades
+// a little context for staying responsive.
+const INTERIM_WINDOW_SAMPLES = SAMPLE_RATE * 8;
 
 const transcriberCache = new Map(); // tier -> { transcriber, device }
 
@@ -85,6 +96,19 @@ function trimTrailingWord(text) {
   const words = text.trim().split(/\s+/);
   if (words.length <= 1) return text; // nothing safe to trim — showing one uncertain word beats showing nothing
   return words.slice(0, -1).join(' ');
+}
+
+// Returns just the trailing chunks totaling ~maxSamples, without slicing
+// individual Float32Arrays — cheap, since chunks are small worklet frames.
+function tailChunks(chunks, maxSamples) {
+  let total = 0;
+  let startIdx = chunks.length;
+  for (let i = chunks.length - 1; i >= 0; i--) {
+    total += chunks[i].length;
+    startIdx = i;
+    if (total >= maxSamples) break;
+  }
+  return chunks.slice(startIdx);
 }
 
 function concatFloat32(chunks) {
@@ -182,7 +206,11 @@ async function runInferencePass(isFinal) {
   }
 
   if (session.currentChunks.length === 0) return;
-  const audio = concatFloat32(session.currentChunks);
+  // Interim passes only see the most recent ~8s (see INTERIM_WINDOW_SAMPLES) so
+  // their compute cost — and latency — stays flat regardless of how long the
+  // segment has grown. Final passes always see the full segment for max context.
+  const relevantChunks = isFinal ? session.currentChunks : tailChunks(session.currentChunks, INTERIM_WINDOW_SAMPLES);
+  const audio = concatFloat32(relevantChunks);
   const minSamples = isFinal ? MIN_INFER_SAMPLES : MIN_INFER_SAMPLES_INTERIM;
   if (audio.length < minSamples) {
     if (isFinal) resetSegmentState(); // nothing meaningful to transcribe — safe to clear
@@ -195,17 +223,28 @@ async function runInferencePass(isFinal) {
   const activeSession = session;
   activeSession.inferring = true;
   try {
-    const { transcriber } = await loadTranscriber(activeSession.modelTier);
+    const { transcriber, device } = await loadTranscriber(activeSession.modelTier);
     if (session !== activeSession) return; // session was stopped/restarted mid-load
 
     // `.en` models (see MODEL_TIERS) are English-only and error out if given
     // `language`/`task` generation options at all — those only apply to
     // multilingual checkpoints, which P0 doesn't use.
+    const inferStart = Date.now();
     const result = await transcriber(audio);
+    const inferMs = Date.now() - inferStart;
     if (session !== activeSession) return;
 
     const text = (result && result.text || '').trim();
-    console.log(`[Free Live Captions] transcribed (isFinal=${isFinal}, ${audio.length} samples):`, JSON.stringify(text));
+    // audioMs vs inferMs tells you directly whether this machine can keep up:
+    // if inferMs regularly exceeds audioMs, transcription is running slower
+    // than real-time and captions WILL lag, regardless of any other tuning.
+    // `device` here is whichever actually loaded (webgpu or wasm fallback) —
+    // WASM is meaningfully slower, so check this before assuming a code bug.
+    const audioMs = Math.round((audio.length / SAMPLE_RATE) * 1000);
+    console.log(
+      `[Free Live Captions] transcribed (isFinal=${isFinal}, device=${device}, audio=${audioMs}ms, inference=${inferMs}ms):`,
+      JSON.stringify(text)
+    );
     const displayText = isFinal ? text : trimTrailingWord(text);
     if (displayText) {
       const startMs = activeSession.currentStartedAt;
