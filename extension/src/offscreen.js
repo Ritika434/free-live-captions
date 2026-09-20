@@ -76,6 +76,15 @@ const INTERIM_WINDOW_SAMPLES = SAMPLE_RATE * 8;
 
 const transcriberCache = new Map(); // tier -> { transcriber, device }
 
+// SUBTITLE_UPDATE travels through two independent async hops (offscreen ->
+// background -> content), neither of which guarantees delivery order across
+// separate calls. With updates now firing every ~500ms, a later message's
+// relay can occasionally overtake an earlier one's, making already-replaced
+// text reappear on screen (found via real-world testing, 2026-09-20). Every
+// outgoing message carries a strictly increasing `seq`; content.js drops
+// anything that arrives out of order rather than trusting arrival order.
+let messageSeq = 0;
+
 let audioContext = null;
 let workletNode = null;
 let mediaStream = null;
@@ -193,9 +202,24 @@ async function loadTranscriberUncached(modelTier, onProgress) {
   return { transcriber, device, tierUsed: modelTier };
 }
 
-function resetSegmentState() {
-  session.currentChunks = [];
-  session.currentStartedAt = null;
+// `consumedCount` is how many chunks were actually fed to the transcriber for
+// THIS pass. Without it, resetting unconditionally to `[]` would also throw
+// away any new audio that arrived (via onWorkletFrame, which keeps pushing
+// during the await) while a final pass was still computing — silently
+// dropping the first words of whatever the user said next. Splicing off only
+// the consumed prefix keeps that new audio around as the start of the next
+// segment (found via real-world testing, 2026-09-20).
+function resetSegmentState(consumedCount) {
+  if (consumedCount == null || consumedCount >= session.currentChunks.length) {
+    session.currentChunks = [];
+    session.currentStartedAt = null;
+  } else {
+    session.currentChunks = session.currentChunks.slice(consumedCount);
+    // The leftover's true start time was slightly earlier than now, but we
+    // don't track per-chunk timestamps — this is close enough for display
+    // purposes and avoids losing the audio entirely.
+    session.currentStartedAt = Date.now();
+  }
   session.silenceMs = 0;
 }
 
@@ -219,6 +243,7 @@ async function runInferencePass(isFinal) {
   // their compute cost — and latency — stays flat regardless of how long the
   // segment has grown. Final passes always see the full segment for max context.
   const relevantChunks = isFinal ? session.currentChunks : tailChunks(session.currentChunks, INTERIM_WINDOW_SAMPLES);
+  const consumedCount = relevantChunks.length; // captured now, before the await lets more chunks arrive
   const audio = concatFloat32(relevantChunks);
   const minSamples = isFinal ? MIN_INFER_SAMPLES : MIN_INFER_SAMPLES_INTERIM;
   if (audio.length < minSamples) {
@@ -266,6 +291,7 @@ async function runInferencePass(isFinal) {
         isFinal,
         startMs,
         endMs,
+        seq: ++messageSeq,
       }).then((resp) => {
         console.log('[Free Live Captions] SUBTITLE_UPDATE sent, background ack:', resp);
       }).catch((err) => {
@@ -275,7 +301,7 @@ async function runInferencePass(isFinal) {
         activeSession.segments.push({ text, startMs, endMs });
       }
     }
-    if (isFinal && session === activeSession) resetSegmentState();
+    if (isFinal && session === activeSession) resetSegmentState(consumedCount);
   } catch (err) {
     // A single failed pass is not fatal (NFR5: transient errors must not kill
     // the session) — log for debugging via the offscreen document's DevTools
@@ -283,7 +309,7 @@ async function runInferencePass(isFinal) {
     console.error('[Free Live Captions] transcription pass failed:', err);
     // Still clear on a failed finalize attempt — otherwise the same audio
     // would just keep re-triggering (and re-failing) forever.
-    if (isFinal && session === activeSession) resetSegmentState();
+    if (isFinal && session === activeSession) resetSegmentState(consumedCount);
   } finally {
     if (session === activeSession) {
       activeSession.inferring = false;

@@ -18,6 +18,7 @@
   let box = null;
   let finalText = '';
   let visible = false;
+  let lastSeq = -1; // drops out-of-order SUBTITLE_UPDATE deliveries — see offscreen.js's messageSeq comment
 
   function reducedMotion() {
     return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -257,6 +258,18 @@
   chrome.runtime.onMessage.addListener((message) => {
     if (!message || message.target !== 'content') return;
     if (message.type === 'SUBTITLE_UPDATE') {
+      // Neither async hop this message traveled through (offscreen ->
+      // background -> content) guarantees delivery order across separate
+      // calls. Dropping anything that arrives out of sequence — rather than
+      // trusting arrival order — is what actually fixes "old text reappears
+      // after being replaced" (reported 2026-09-20), regardless of which hop
+      // the reordering happened in.
+      if (typeof message.seq === 'number' && message.seq <= lastSeq) {
+        console.log(`[Free Live Captions] dropped out-of-order update (seq ${message.seq} <= ${lastSeq}):`, JSON.stringify(message.text));
+        return;
+      }
+      if (typeof message.seq === 'number') lastSeq = message.seq;
+
       render(message.text, message.isFinal);
       // Check on the page's own DevTools console (F12 on the captioned tab —
       // NOT the offscreen document's console) — confirms the message arrived
@@ -268,6 +281,7 @@
       );
     } else if (message.type === 'CAPTIONS_STOPPED') {
       finalText = '';
+      lastSeq = -1;
       hide();
     }
   });

@@ -89,6 +89,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           isFinal: message.isFinal,
           startMs: message.startMs,
           endMs: message.endMs,
+          seq: message.seq,
         }).then(() => {
           console.log(`[Free Live Captions] tab ${message.tabId} acked the relay`);
         }).catch((err) => {
