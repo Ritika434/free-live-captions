@@ -29,7 +29,16 @@ const MODEL_TIERS = {
 const TIER_STEP_DOWN = { small: 'base', base: 'tiny', tiny: null };
 
 const SAMPLE_RATE = 16000;
-const INFERENCE_INTERVAL_MS = 1000; // how often we re-transcribe the growing segment
+// Real-world timing data (2026-09-20, WebGPU): inference took only 164-337ms
+// to transcribe 2-5s of audio — comfortably under the old 1000ms interval,
+// meaning most of that interval was pure waiting, not compute. That wait is
+// felt directly as caption lag (on top of the deliberate one-cycle holdback
+// on each update's last word, see trimTrailingWord) despite the hardware
+// having headroom to spare. Halved to update roughly twice as often. The
+// `session.inferring` guard already handles the case where a single pass
+// takes longer than this interval (e.g. a long windowed buffer) by skipping
+// that tick rather than overlapping, so this is safe to lower.
+const INFERENCE_INTERVAL_MS = 500;
 const SILENCE_FINALIZE_MS = 800; // pause length that commits a segment as final
 // Force-finalize long segments even without a silence gap — continuous dialogue
 // (movies, shows with background music) can easily never hit SILENCE_FINALIZE_MS.
