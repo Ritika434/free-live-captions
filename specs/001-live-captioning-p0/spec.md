@@ -45,6 +45,7 @@ Everything required for a user to: install the extension → turn on captions on
 - Mobile browser support.
 - Real-time translation overlay (local M2M100/NLLB) — candidate for P1.
 - Custom vocabulary / dictionary boosting — candidate for P1.
+- Accurate song-lyric transcription. Confirmed via real-world testing (2026-09-20) that accuracy on music is meaningfully worse than on spoken dialogue — expected, since Whisper/Moonshine are trained on speech, not singing, and proper lyric transcription needs a vocal-isolation preprocessing step this project doesn't implement. Documented as a known limitation (extension/README.md) rather than pursued, since it's outside this project's actual target use case (accessibility captioning for speech: meetings, lectures, video dialogue).
 
 ## 6. Functional Requirements
 
